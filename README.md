@@ -4,7 +4,9 @@
 
 ## Why this fork exists
 
-I started COSMIC CE because recurring bugs were getting in the way of using COSMIC every day, some reports about issues that seriously affected the desktop experience had gone unanswered, and upstream’s policy barred AI-assisted contributions. This fork prioritizes fixes that make the desktop better to use and welcomes contributors who use AI tools to develop and test those fixes.
+I started COSMIC CE because recurring bugs were getting in the way of using COSMIC every day. Some reports of serious desktop problems went months without a public response from maintainers, and upstream closed several proposed fixes after banning LLM-generated content in issues and pull requests. This fork prioritizes fixes that make the desktop better to use and welcomes contributors who use AI tools to develop and test those fixes.
+
+See [Upstream Grievances](./UPSTREAM-GRIEVANCES.md) for the original bug reports, proposed fixes, and upstream responses.
 
 ## Contributing
 
