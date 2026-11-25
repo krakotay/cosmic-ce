@@ -20,20 +20,18 @@ project_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 package_state='${db:Status-Abbrev}\t${binary:Package}\t${Version}\n'
 
 enable_canary() {
-    local archive_packages
-    archive_packages=$(mktemp)
-    if ! curl --fail --silent --show-error --location "$archive/dists/noble/InRelease" --output "$archive_packages"; then
-        rm -f "$archive_packages"
+    local release binary_keyring verified=0
+    release=$(mktemp)
+    if ! curl --fail --silent --show-error --location "$archive/dists/noble/InRelease" --output "$release"; then
+        rm -f "$release"
         return 1
     fi
-    local verified=0
-    local binary_keyring
     binary_keyring=$(mktemp)
     if gpg --batch --yes --dearmor --output "$binary_keyring" "$project_root/packaging/cosmic-ce-archive.asc" &&
-        gpgv --keyring "$binary_keyring" "$archive_packages"; then
+        gpgv --keyring "$binary_keyring" "$release"; then
         verified=1
     fi
-    rm -f "$archive_packages" "$binary_keyring"
+    rm -f "$release" "$binary_keyring"
     (( verified )) || return 1
 
     install -d -m 0755 /etc/apt/keyrings
@@ -111,7 +109,10 @@ restore_upstream() {
 
 case "${1:-}" in
     enable) enable_canary ;;
-    switch) enable_canary && switch_to_canary ;;
+    switch)
+        enable_canary
+        switch_to_canary
+        ;;
     rollback) restore_upstream ;;
     *) echo "Usage: $0 {enable|switch|rollback}" >&2; exit 2 ;;
 esac
