@@ -31,7 +31,7 @@ build:
     {{ make }} -C cosmic-wallpapers all
     {{ make }} -C cosmic-workspaces-epoch all
     {{ just }} pop-launcher/build-release
-    cd xdg-desktop-portal-cosmic && {{ just }} debug=0
+    cd xdg-desktop-portal-cosmic && {{ just }} build-release
 
 install rootdir="" prefix="/usr/local": build
     {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-applets/install
@@ -65,7 +65,7 @@ install rootdir="" prefix="/usr/local": build
     cd xdg-desktop-portal-cosmic && {{ just }} rootdir={{rootdir}} prefix={{prefix}} install
 
 _mkdir dir:
-   mkdir -p dir
+   mkdir -p {{quote(dir)}}
 
 sysext dir=(invocation_directory() / "cosmic-sysext") version=("nightly-" + `git rev-parse --short HEAD`): (_mkdir dir) (install dir "/usr")
     #!/usr/bin/env sh

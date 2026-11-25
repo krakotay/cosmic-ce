@@ -19,32 +19,69 @@ You are responsible for your patch. Understand and review the complete diff, man
 - `master` is the default branch for COSMIC CE changes and pull requests.
 - `upstream` tracks `pop-os/cosmic-epoch:master`. GitHub Actions checks it daily and advances it when a fast-forward is possible. Upstream changes are reviewed before integration into `master`.
 
-## COSMIC CE Canary APT repository
+The [COSMIC CE Viewer fork](https://github.com/krakotay/cosmic-viewer) mirrors `pop-os/cosmic-viewer:master` to its own `upstream` branch daily. This repository builds the Viewer commit pinned by its submodule.
 
-The canary targets **Pop!_OS 24.04 (Noble), amd64**. Build zero packages the pinned upstream components. The packages retain their upstream names so APT can replace existing COSMIC packages and keep their configuration. The signed canary archive gets priority for the packages it provides. Keep the official Pop!_OS sources enabled for system dependencies and rollback.
+<a name="cosmic-ce-canary-apt-repository"></a>
 
-The [Canary prerelease](https://github.com/krakotay/cosmic-ce/releases/tag/canary) always points to the last successfully published build and includes the installers, a Debian package archive and checksums. The [Canary workflow](.github/workflows/canary.yml) runs on demand. To build on every push to `master`, set the repository Actions variable `COSMIC_CE_CANARY_ON_PUSH` to `true`. The `stable` tag is reserved for a future stable release.
+## Install COSMIC CE
 
-The [COSMIC sound theme source](https://github.com/pop-os/cosmic-sound-theme/tree/bf5335fe1af0cb3bee83e1ad2371410ee434658d) is by Ian Santopietro and is distributed under CC BY-SA 4.0.
+COSMIC CE packages target **Pop!_OS 24.04 (amd64)** and **Fedora 45 (x86_64, non-Atomic)**. They use the distribution's package names and package manager, so you can replace one installed application or switch the desktop. Keep the official distribution repositories enabled for dependencies and rollback.
 
-### Install Canary or switch from upstream COSMIC
+The [Canary prerelease](https://github.com/krakotay/cosmic-ce/releases/tag/canary) and [Stable release](https://github.com/krakotay/cosmic-ce/releases/tag/stable), once published, include individual DEBs and RPMs, full archives, checksums, and the installers. The installer verifies the signed package list and the checksums of downloaded packages. It uses APT on Pop!_OS and DNF on Fedora.
 
-```sh
-curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh | sudo sh -s -- --canary --add-apt-repository
-```
+### Install or download just COSMIC Viewer
 
-The installer verifies the signed APT archive, adds it to APT, and asks for confirmation before installing or switching the desktop packages. Review the proposed changes, then log out and back in once the installation completes.
-
-### Add the archive and manage packages with APT
+On either supported distribution, install only the CE build of `cosmic-viewer`. The package manager resolves its required dependencies from the enabled system repositories.
 
 ```sh
-curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh | sudo sh -s -- --canary --add-apt-repository --repository-only
-sudo apt update
-sudo apt upgrade
-sudo apt install cosmic-session cosmic-sound-theme
+curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh |
+  sudo sh -s -- --canary --package cosmic-viewer
 ```
 
-### Restore the official Pop!_OS packages
+Repeat `--package` to select more applications, for example `--package cosmic-viewer --package cosmic-edit`. For Stable, use the installer under `releases/download/stable/` and pass `--stable`.
+
+List the package names for your distribution or download Viewer into the current directory.
+
+```sh
+curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh |
+  sh -s -- --canary --list-packages
+
+curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh |
+  sh -s -- --canary --package cosmic-viewer --download-only
+```
+
+You can also download the individual Viewer DEB or RPM under **Assets** and install it with `sudo apt install ./<filename>.deb` or `sudo dnf install ./<filename>.rpm`.
+
+### Keep selected Canary packages updated on Pop!_OS
+
+Add the signed APT archive with a pin for just the packages you select. In this example, subsequent APT upgrades track CE for `cosmic-viewer` and use your regular sources for the rest of COSMIC.
+
+```sh
+curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh |
+  sudo sh -s -- --canary --add-apt-repository --package cosmic-viewer
+```
+
+Running this again with `--add-apt-repository` replaces the previous selection. Use `--repository-only` to set the pin without installing packages. To return already installed CE packages to their distribution versions, use the rollback script.
+
+### Switch the desktop
+
+On **Pop!_OS**, omit `--package` and enable the Canary archive for the desktop.
+
+```sh
+curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh |
+  sudo sh -s -- --canary --add-apt-repository
+```
+
+On **Fedora**, omit `--package` to install the desktop RPMs together. Rerun the installer to take a newer CE build.
+
+```sh
+curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh |
+  sudo sh -s -- --canary
+```
+
+Review the package transaction, then log out and back in. Stable uses release files on both distributions.
+
+### Restore the distribution packages
 
 If the desktop fails to start, open a text console with **Ctrl+Alt+F3** and log in.
 
@@ -52,7 +89,15 @@ If the desktop fails to start, open a text console with **Ctrl+Alt+F3** and log 
 curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/rollback.sh | sudo sh
 ```
 
-The command removes the canary source and its pin, refreshes APT, and reinstalls the official versions of the packages it finds at COSMIC CE versions. It removes the canary-only sound theme and leaves the desktop's user settings in place. Review the APT transaction before confirming.
+On Pop!_OS, rollback removes the Canary APT configuration and reinstalls Pop!_OS versions. On Fedora, it synchronizes installed CE packages with the official Fedora repositories. Review any proposed removal of packages without a distribution counterpart, such as the CE sound theme. The Stable release includes the same rollback command.
+
+### Build a package or publish a release
+
+In the [COSMIC CE Packages workflow](.github/workflows/canary.yml), enter `cosmic-viewer` in **component** and choose **deb**, **rpm**, or **both**. Download the result from the run's artifacts. The field takes a submodule name. For example, use `cosmic-icons` to build the Fedora package named `cosmic-icon-theme`.
+
+For a public release, run the workflow on `master` with **component** empty and **format** set to **both**, and choose **canary** or **stable**. Complete Canary builds also update the Pop!_OS APT archive. Setting the Actions variable `COSMIC_CE_CANARY_ON_PUSH` to `true` enables complete Canary builds on pushes to `master`.
+
+The [COSMIC sound theme source](https://github.com/pop-os/cosmic-sound-theme/tree/bf5335fe1af0cb3bee83e1ad2371410ee434658d) is by Ian Santopietro and is distributed under CC BY-SA 4.0.
 
 ## About upstream COSMIC
 

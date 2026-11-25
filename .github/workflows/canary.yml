@@ -1,7 +1,21 @@
-name: COSMIC CE Canary
+name: COSMIC CE Packages
 
 on:
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel for a complete build
+        type: choice
+        options: [canary, stable]
+        default: canary
+      component:
+        description: Submodule to build (empty builds the desktop)
+        type: string
+      format:
+        description: Package format (single-format builds are artifacts only)
+        type: choice
+        options: [both, deb, rpm]
+        default: both
   push:
     branches: [master]
 
@@ -9,60 +23,128 @@ permissions:
   contents: read
 
 concurrency:
-  group: cosmic-ce-canary
+  group: cosmic-ce-packages-${{ github.ref }}-${{ inputs.channel || 'canary' }}-${{ inputs.component || 'desktop' }}-${{ inputs.format || 'both' }}
   cancel-in-progress: false
 
 jobs:
   sources:
     if: >-
       github.repository == 'krakotay/cosmic-ce' &&
-      github.ref == 'refs/heads/master' &&
       (github.event_name == 'workflow_dispatch' || vars.COSMIC_CE_CANARY_ON_PUSH == 'true')
     runs-on: ubuntu-24.04
     outputs:
-      components: ${{ steps.components.outputs.components }}
+      components: ${{ steps.matrix.outputs.components }}
+      formats: ${{ steps.matrix.outputs.formats }}
+      channel: ${{ steps.matrix.outputs.channel }}
+      publish: ${{ steps.matrix.outputs.publish }}
     steps:
       - uses: actions/checkout@v6
-      - id: components
+        with:
+          persist-credentials: false
+      - id: matrix
+        env:
+          COMPONENT: ${{ inputs.component }}
+          FORMAT: ${{ inputs.format || 'both' }}
+          CHANNEL: ${{ inputs.channel || 'canary' }}
         run: |
           components=$(git ls-files --stage | awk '$1 == "160000" {print $4}' | jq -Rsc 'split("\n") | map(select(length > 0))')
-          jq -e 'length > 0' <<< "$components"
-          echo "components=$components" >> "$GITHUB_OUTPUT"
+          if [[ -n "$COMPONENT" ]]; then
+            components=$(jq -c --arg component "$COMPONENT" 'map(select(. == $component))' <<< "$components")
+          fi
+          if ! jq -e 'length > 0' <<< "$components" >/dev/null; then
+            printf 'Unknown submodule: %s\n' "$COMPONENT" >&2
+            exit 1
+          fi
+          case "$FORMAT" in
+            both) formats='["deb","rpm"]' ;;
+            deb) formats='["deb"]' ;;
+            rpm) formats='["rpm"]' ;;
+            *) exit 1 ;;
+          esac
+          case "$CHANNEL" in
+            canary|stable) ;;
+            *) exit 1 ;;
+          esac
+          publish=false
+          if [[ "$GITHUB_REF" == refs/heads/master && -z "$COMPONENT" && "$FORMAT" == both ]]; then
+            publish=true
+          fi
+          printf 'components=%s\nformats=%s\nchannel=%s\npublish=%s\n' "$components" "$formats" "$CHANNEL" "$publish" >> "$GITHUB_OUTPUT"
 
   build:
     needs: sources
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         component: ${{ fromJSON(needs.sources.outputs.components) }}
+        format: ${{ fromJSON(needs.sources.outputs.formats) }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Check out the pinned component
         env:
           COMPONENT: ${{ matrix.component }}
-        run: git submodule update --init --recursive --depth 1 -- "$COMPONENT"
+        run: |
+          git submodule update --init --recursive --depth 1 -- "$COMPONENT"
+          if [[ -f "$COMPONENT/.gitattributes" ]] && grep -q filter=lfs "$COMPONENT/.gitattributes"; then
+            git -C "$COMPONENT" lfs pull
+          fi
       - name: Build Debian packages on Noble
+        if: matrix.format == 'deb'
+        env:
+          COMPONENT: ${{ matrix.component }}
+          CHANNEL: ${{ needs.sources.outputs.channel }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -e COMPONENT -e CHANNEL \
+            -e GITHUB_RUN_NUMBER -e GITHUB_RUN_ATTEMPT ubuntu:24.04 \
+            bash /src/scripts/build-canary-deb.sh
+      - name: Build RPM packages on Fedora 45
+        if: matrix.format == 'rpm'
         env:
           COMPONENT: ${{ matrix.component }}
         run: |
           docker run --rm -v "$GITHUB_WORKSPACE:/src" -e COMPONENT \
-            -e GITHUB_RUN_NUMBER -e GITHUB_RUN_ATTEMPT ubuntu:24.04 \
-            bash /src/scripts/build-canary-deb.sh
+            -e GITHUB_RUN_NUMBER -e GITHUB_RUN_ATTEMPT quay.io/fedora/fedora:45 \
+            bash /src/scripts/build-fedora-rpm.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: deb-${{ matrix.component }}
-          path: canary-debs/*.deb
+          name: ${{ matrix.format }}-${{ matrix.component }}
+          path: canary-${{ matrix.format }}s/*.${{ matrix.format }}
           if-no-files-found: error
+          compression-level: 0
+
+  verify-rpms:
+    needs: [sources, build]
+    if: >-
+      contains(fromJSON(needs.sources.outputs.formats), 'rpm') &&
+      (needs.sources.outputs.publish == 'true' || needs.sources.outputs.components == '["cosmic-viewer"]')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rpm-*
+          path: packages
+      - name: Check that Viewer installs with Fedora dependencies
+        run: |
+          docker run --rm -v "$PWD/packages:/packages:ro" quay.io/fedora/fedora:45 \
+            bash -euc 'dnf5 -y --setopt=tsflags=test --setopt=install_weak_deps=False install /packages/rpm-cosmic-viewer/*.rpm'
+      - name: Check the desktop RPM transaction against Fedora repositories
+        if: needs.sources.outputs.publish == 'true'
+        run: |
+          docker run --rm -v "$PWD/packages:/packages:ro" quay.io/fedora/fedora:45 \
+            bash -euc 'dnf5 -y --setopt=tsflags=test install /packages/rpm-*/*.rpm'
 
   archive:
-    needs: build
+    needs: [sources, verify-rpms]
+    if: needs.sources.outputs.publish == 'true' && needs.sources.outputs.channel == 'canary'
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: deb-*
@@ -92,17 +174,28 @@ jobs:
         uses: actions/deploy-pages@v4
 
   release:
-    needs: publish
+    needs: [sources, verify-rpms, publish]
+    if: >-
+      ${{ !cancelled() && needs.sources.outputs.publish == 'true' &&
+      needs.verify-rpms.result == 'success' &&
+      (needs.sources.outputs.channel == 'stable' || needs.publish.result == 'success') }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          pattern: deb-*
-          path: canary-packages
-      - name: Update the canary tag and prerelease
+          pattern: '{deb,rpm}-*'
+          path: packages
+      - name: Publish packages and installers to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/release-canary.sh canary-packages "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY"
+          APT_SIGNING_KEY: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}
+          CHANNEL: ${{ needs.sources.outputs.channel }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm
+          bash scripts/release-packages.sh packages "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY" "$CHANNEL"

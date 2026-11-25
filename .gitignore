@@ -1,3 +1,5 @@
 .vscode
 cosmic-sysext
 *_build
+/canary-debs/
+/canary-rpms/

@@ -13,6 +13,10 @@ on:
   schedule:
     - cron: '0 7 * * *' # Midnight MST daily
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   Test:
     runs-on: ubuntu-latest
@@ -28,6 +32,7 @@ jobs:
         clang
         desktop-file-utils
         git
+        git-lfs
         gtk3
         gtk4
         just
@@ -54,4 +59,9 @@ jobs:
     # Safe directory behavior seems to have issues with `container:`
     # https://github.com/actions/checkout/issues/915
     - run: git config --global --add safe.directory '*'
+    - name: Check the portal build recipe
+      working-directory: xdg-desktop-portal-cosmic
+      run: just --dry-run build-release
+    - name: Fetch Git LFS assets
+      run: git submodule foreach 'if [ -f .gitattributes ] && grep -q filter=lfs .gitattributes; then git lfs pull; fi'
     - run: just sysext
