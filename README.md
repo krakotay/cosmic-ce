@@ -1,6 +1,27 @@
-# COSMIC Desktop
+# COSMIC CE
+
+> **COSMIC CE is an independent community fork of [System76’s COSMIC Desktop](https://github.com/pop-os/cosmic-epoch).** It is maintained independently of System76 and the upstream COSMIC developers. COSMIC CE claims no rights to upstream trademarks or logos. All upstream software licenses, copyright notices, and attributions are preserved. See the [upstream trademark policy](./TRADEMARK.md).
+
+## Why this fork exists
+
+I started COSMIC CE because recurring bugs were getting in the way of using COSMIC every day, some reports about issues that seriously affected the desktop experience had gone unanswered, and upstream’s policy barred AI-assisted contributions. This fork prioritizes fixes that make the desktop better to use and welcomes contributors who use AI tools to develop and test those fixes.
+
+## Contributing
+
+**AI-assisted contributions are explicitly allowed and encouraged.** The same quality bar applies to every patch. We reject low-quality human-written and AI-generated patches alike, especially when they have been submitted without testing.
+
+You are responsible for your patch. Understand and review the complete diff, manually test the affected behavior, and explain what you tested in the PR. For visual changes and UI bug fixes, include before-and-after screenshots or a short screen recording whenever practical.
+
+## Branches
+
+- `master` is the default branch for COSMIC CE changes and pull requests.
+- `upstream` tracks `pop-os/cosmic-epoch:master`. GitHub Actions checks it daily and advances it when a fast-forward is possible. Upstream changes are reviewed before integration into `master`.
+
+## About upstream COSMIC
 
 [COSMIC](https://system76.com/cosmic) is a desktop environment offering performance, efficiency, and personalization to empower a wide variety of use cases.
+
+The distribution installation instructions below are for upstream COSMIC packages.
 
 ## Components of COSMIC Desktop
 * [cosmic-applets](https://github.com/pop-os/cosmic-applets)
