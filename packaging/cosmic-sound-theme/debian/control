@@ -1,0 +1,14 @@
+Source: cosmic-sound-theme
+Section: x11
+Priority: optional
+Maintainer: COSMIC CE <cosmic-ce@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13), meson, ninja-build
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/pop-os/cosmic-sound-theme
+
+Package: cosmic-sound-theme
+Architecture: all
+Depends: ${misc:Depends}
+Description: Sound theme for the COSMIC desktop
+ Default audio cues for the COSMIC desktop environment.

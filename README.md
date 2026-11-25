@@ -17,6 +17,44 @@ You are responsible for your patch. Understand and review the complete diff, man
 - `master` is the default branch for COSMIC CE changes and pull requests.
 - `upstream` tracks `pop-os/cosmic-epoch:master`. GitHub Actions checks it daily and advances it when a fast-forward is possible. Upstream changes are reviewed before integration into `master`.
 
+## COSMIC CE Canary APT repository
+
+The canary targets **Pop!_OS 24.04 (Noble), amd64**. Build zero packages the pinned upstream components. The packages retain their upstream names so APT can replace existing COSMIC packages and keep their configuration. The signed canary archive gets priority for the packages it provides. Keep the official Pop!_OS sources enabled for system dependencies and rollback.
+
+Clone this repository on the machine you want to update. The helper uses `curl`, `gpg` and `gpgv` to verify the archive before adding its source.
+
+```sh
+git clone https://github.com/krakotay/cosmic-ce.git
+cd cosmic-ce
+```
+
+### Enable the canary archive
+
+```sh
+sudo bash scripts/cosmic-ce-apt.sh enable
+sudo apt update
+sudo apt upgrade
+sudo apt install cosmic-session cosmic-sound-theme
+```
+
+### Replace an existing COSMIC installation
+
+```sh
+sudo bash scripts/cosmic-ce-apt.sh switch
+```
+
+This enables the signed archive and asks APT to replace the currently installed COSMIC packages covered by the canary. Review APT's proposed changes before confirming, then log out and back in once the installation completes.
+
+### Restore the official Pop!_OS packages
+
+If the desktop fails to start, open a text console with **Ctrl+Alt+F3**, log in, and run the following from your COSMIC CE checkout.
+
+```sh
+sudo bash scripts/cosmic-ce-apt.sh rollback
+```
+
+The command removes the canary source and its pin, refreshes APT, and reinstalls the official versions of the packages it finds at COSMIC CE versions. It removes the canary-only sound theme and leaves the desktop's user settings in place. Review the APT transaction before confirming.
+
 ## About upstream COSMIC
 
 [COSMIC](https://system76.com/cosmic) is a desktop environment offering performance, efficiency, and personalization to empower a wide variety of use cases.

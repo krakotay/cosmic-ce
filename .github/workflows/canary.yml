@@ -1,0 +1,92 @@
+name: COSMIC CE Canary
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cosmic-ce-canary
+  cancel-in-progress: false
+
+jobs:
+  sources:
+    if: >-
+      github.repository == 'krakotay/cosmic-ce' &&
+      github.ref == 'refs/heads/master' &&
+      (github.event_name == 'workflow_dispatch' || vars.COSMIC_CE_CANARY_ON_PUSH == 'true')
+    runs-on: ubuntu-24.04
+    outputs:
+      components: ${{ steps.components.outputs.components }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: components
+        run: |
+          components=$(git ls-files --stage | awk '$1 == "160000" {print $4}' | jq -Rsc 'split("\n") | map(select(length > 0))')
+          jq -e 'length > 0' <<< "$components"
+          echo "components=$components" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.sources.outputs.components) }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check out the pinned component
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: git submodule update --init --recursive --depth 1 -- "$COMPONENT"
+      - name: Build Debian packages on Noble
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -e COMPONENT \
+            -e GITHUB_RUN_NUMBER -e GITHUB_RUN_ATTEMPT ubuntu:24.04 \
+            bash /src/scripts/build-canary-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.component }}
+          path: canary-debs/*.deb
+          if-no-files-found: error
+
+  archive:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          path: canary-packages
+      - name: Create and validate the signed APT archive
+        env:
+          APT_SIGNING_KEY: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apt-utils
+          bash scripts/publish-canary-apt.sh canary-packages canary-site
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: canary-site
+
+  publish:
+    needs: archive
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
