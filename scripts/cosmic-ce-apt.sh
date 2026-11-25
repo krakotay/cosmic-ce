@@ -74,13 +74,14 @@ switch_to_canary() {
 }
 
 restore_upstream() {
-    local installed package version preview
+    local installed state package version preview
     local -a originals=()
     rm -f "$source_file" "$preferences_file"
     apt-get update
 
     installed=$(dpkg-query -W -f="$package_state")
-    while IFS=$'\t' read -r _ package version; do
+    while IFS=$'\t' read -r state package version; do
+        [[ "$state" =~ ^.[HiUFWt] ]] || continue
         [[ "$version" == *+cosmicce0.build* ]] || continue
         if [[ "$package" == cosmic-sound-theme ]]; then
             originals+=("cosmic-sound-theme-")

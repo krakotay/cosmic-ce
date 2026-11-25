@@ -21,6 +21,10 @@ You are responsible for your patch. Understand and review the complete diff, man
 
 The canary targets **Pop!_OS 24.04 (Noble), amd64**. Build zero packages the pinned upstream components. The packages retain their upstream names so APT can replace existing COSMIC packages and keep their configuration. The signed canary archive gets priority for the packages it provides. Keep the official Pop!_OS sources enabled for system dependencies and rollback.
 
+The [Canary workflow](.github/workflows/canary.yml) runs on demand. To build on every push to `master`, set the repository Actions variable `COSMIC_CE_CANARY_ON_PUSH` to `true`.
+
+The [COSMIC sound theme source](https://github.com/pop-os/cosmic-sound-theme/tree/bf5335fe1af0cb3bee83e1ad2371410ee434658d) is by Ian Santopietro and is distributed under CC BY-SA 4.0.
+
 Clone this repository on the machine you want to update. The helper uses `curl`, `gpg` and `gpgv` to verify the archive before adding its source.
 
 ```sh
