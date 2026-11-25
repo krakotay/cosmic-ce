@@ -90,3 +90,19 @@ jobs:
     steps:
       - id: deploy
         uses: actions/deploy-pages@v4
+
+  release:
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          path: canary-packages
+      - name: Update the canary tag and prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release-canary.sh canary-packages "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY"

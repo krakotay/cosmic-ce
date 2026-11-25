@@ -21,40 +21,33 @@ You are responsible for your patch. Understand and review the complete diff, man
 
 The canary targets **Pop!_OS 24.04 (Noble), amd64**. Build zero packages the pinned upstream components. The packages retain their upstream names so APT can replace existing COSMIC packages and keep their configuration. The signed canary archive gets priority for the packages it provides. Keep the official Pop!_OS sources enabled for system dependencies and rollback.
 
-The [Canary workflow](.github/workflows/canary.yml) runs on demand. To build on every push to `master`, set the repository Actions variable `COSMIC_CE_CANARY_ON_PUSH` to `true`.
+The [Canary prerelease](https://github.com/krakotay/cosmic-ce/releases/tag/canary) always points to the last successfully published build and includes the installers, a Debian package archive and checksums. The [Canary workflow](.github/workflows/canary.yml) runs on demand. To build on every push to `master`, set the repository Actions variable `COSMIC_CE_CANARY_ON_PUSH` to `true`. The `stable` tag is reserved for a future stable release.
 
 The [COSMIC sound theme source](https://github.com/pop-os/cosmic-sound-theme/tree/bf5335fe1af0cb3bee83e1ad2371410ee434658d) is by Ian Santopietro and is distributed under CC BY-SA 4.0.
 
-Clone this repository on the machine you want to update. The helper uses `curl`, `gpg` and `gpgv` to verify the archive before adding its source.
+### Install Canary or switch from upstream COSMIC
 
 ```sh
-git clone https://github.com/krakotay/cosmic-ce.git
-cd cosmic-ce
+curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh | sudo sh -s -- --canary --add-apt-repository
 ```
 
-### Enable the canary archive
+The installer verifies the signed APT archive, adds it to APT, and asks for confirmation before installing or switching the desktop packages. Review the proposed changes, then log out and back in once the installation completes.
+
+### Add the archive and manage packages with APT
 
 ```sh
-sudo bash scripts/cosmic-ce-apt.sh enable
+curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh | sudo sh -s -- --canary --add-apt-repository --repository-only
 sudo apt update
 sudo apt upgrade
 sudo apt install cosmic-session cosmic-sound-theme
 ```
 
-### Replace an existing COSMIC installation
-
-```sh
-sudo bash scripts/cosmic-ce-apt.sh switch
-```
-
-This enables the signed archive and asks APT to replace the currently installed COSMIC packages covered by the canary. Review APT's proposed changes before confirming, then log out and back in once the installation completes.
-
 ### Restore the official Pop!_OS packages
 
-If the desktop fails to start, open a text console with **Ctrl+Alt+F3**, log in, and run the following from your COSMIC CE checkout.
+If the desktop fails to start, open a text console with **Ctrl+Alt+F3** and log in.
 
 ```sh
-sudo bash scripts/cosmic-ce-apt.sh rollback
+curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/rollback.sh | sudo sh
 ```
 
 The command removes the canary source and its pin, refreshes APT, and reinstalls the official versions of the packages it finds at COSMIC CE versions. It removes the canary-only sound theme and leaves the desktop's user settings in place. Review the APT transaction before confirming.
