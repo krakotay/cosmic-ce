@@ -4,76 +4,39 @@ make := `which make`
 
 build:
     mkdir -p build
-    {{ just }} cosmic-applets/build-release
-    cd cosmic-app-library && {{ just }} build-release
-    {{ just }} cosmic-bg/build-release
-    {{ just }} cosmic-comp/build-release
-    {{ just }} cosmic-edit/build-release
-    {{ just }} cosmic-files/build-release
-    {{ just }} cosmic-greeter/build-release
-    {{ just }} cosmic-idle/build-release
-    cd cosmic-initial-setup && {{ just }} build-release
-    cd cosmic-launcher && {{ just }} build-release
-    {{ just }} cosmic-monitor/build-release
-    {{ just }} cosmic-notifications/build-release
-    {{ just }} cosmic-osd/build-release
-    {{ just }} cosmic-osk/build-release
-    {{ just }} cosmic-panel/build-release
-    {{ just }} cosmic-player/build-release
-    {{ just }} cosmic-randr/build-release
-    {{ just }} cosmic-screenshot/build-release
-    cd cosmic-settings && {{ just }} build-release
-    cd cosmic-settings-daemon && {{ just }} build-release
-    {{ just }} cosmic-session/build-release
-    {{ just }} cosmic-store/build-release
-    {{ just }} cosmic-term/build-release
-    {{ just }} cosmic-viewer/build-release
-    {{ make }} -C cosmic-wallpapers all
-    cd cosmic-workspaces-epoch && {{ just }} build-release
-    {{ just }} pop-launcher/build-release
-    cd xdg-desktop-portal-cosmic && {{ just }} build-release
+    while read -r component group; do {{ just }} _build-component "$component" || exit; done < scripts/sysext-components.tsv
 
 deb-build package:
     bash scripts/build-local-debs.sh {{quote(package)}}
 
 install rootdir="" prefix="/usr/local": build
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-applets/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-app-library/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-bg/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-comp/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-edit/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-files/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-greeter/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-icons/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-idle/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-initial-setup/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-launcher/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-monitor/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-notifications/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-osd/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-osk/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-panel/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-player/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-randr/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-screenshot/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-settings/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-settings-daemon/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-session/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-store/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-term/install
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-viewer/install
-    {{ make }} -C cosmic-wallpapers install DESTDIR={{rootdir}} prefix={{prefix}}
-    cd cosmic-workspaces-epoch && {{ just }} rootdir={{rootdir}} prefix={{prefix}} install
-    {{ just }} rootdir={{rootdir}} pop-launcher/install
-    cd xdg-desktop-portal-cosmic && {{ just }} rootdir={{rootdir}} prefix={{prefix}} install
+    while read -r component group; do {{ just }} _install-component "$component" {{quote(rootdir)}} {{quote(prefix)}} || exit; done < scripts/sysext-components.tsv
+
+_build-component component:
+    case {{quote(component)}} in \
+        cosmic-icons) ;; \
+        cosmic-wallpapers) {{ make }} -C cosmic-wallpapers all ;; \
+        *) cd {{quote(component)}} && {{ just }} build-release ;; \
+    esac
+
+_install-component component rootdir prefix:
+    case {{quote(component)}} in \
+        cosmic-wallpapers) {{ make }} -C cosmic-wallpapers install DESTDIR={{quote(rootdir)}} prefix={{quote(prefix)}} ;; \
+        pop-launcher) cd pop-launcher && {{ just }} rootdir={{quote(rootdir)}} install ;; \
+        *) cd {{quote(component)}} && {{ just }} rootdir={{quote(rootdir)}} prefix={{quote(prefix)}} install ;; \
+    esac
 
 _mkdir dir:
    mkdir -p {{quote(dir)}}
 
 sysext dir=(invocation_directory() / "cosmic-sysext") version=("nightly-" + `git rev-parse --short HEAD`): (_mkdir dir) (install dir "/usr")
+    {{ just }} _sysext-metadata {{quote(dir)}} {{quote(version)}}
+
+_sysext-metadata dir version=("nightly-" + `git rev-parse --short HEAD`):
     #!/usr/bin/env sh
-    mkdir -p {{dir}}/usr/lib/extension-release.d/
-    cat >{{dir}}/usr/lib/extension-release.d/extension-release.cosmic-sysext <<EOF
+    set -e
+    mkdir -p {{quote(dir)}}/usr/lib/extension-release.d/
+    cat >{{quote(dir)}}/usr/lib/extension-release.d/extension-release.cosmic-sysext <<EOF
     NAME="Cosmic DE"
     VERSION={{version}}
     $(cat /etc/os-release | grep '^ID=')

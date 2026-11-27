@@ -20,17 +20,40 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  Test:
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      groups: ${{ steps.groups.outputs.groups }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - name: List parallel build groups
+      id: groups
+      run: |
+        groups=$(cut -f2 scripts/sysext-components.tsv | sort -u | jq -Rsc 'split("\n")[:-1]')
+        echo "groups=$groups" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and stage (${{ matrix.group }})
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.plan.outputs.groups) }}
     env:
+      BUILD_GROUP: ${{ matrix.group }}
       CARGO_INCREMENTAL: '0'
       RUSTC_WRAPPER: sccache
-      SCCACHE_CACHE_SIZE: 2G
+      SCCACHE_CACHE_SIZE: 512M
     container:
       image: archlinux:base-devel
-      volumes:
-        - /:/host
     steps:
     - run: >
         pacman --noconfirm --needed -Syu
@@ -67,47 +90,46 @@ jobs:
     # Safe directory behavior seems to have issues with `container:`
     # https://github.com/actions/checkout/issues/915
     - run: git config --global --add safe.directory '*'
-    - name: Fingerprint sysext inputs
+    - name: Fingerprint component and toolchain inputs
       id: inputs
-      shell: bash
       run: |
-        sources=$(git ls-tree HEAD | awk '$1 == "160000" || ($4 != ".github" && $4 != "docs" && $4 !~ /[.]md$/)' | sha256sum | cut -d ' ' -f 1)
+        mapfile -t components < <(awk -v group="$BUILD_GROUP" '$2 == group {print $1}' scripts/sysext-components.tsv)
+        test "${#components[@]}" -gt 0
+        sources=$(git ls-tree HEAD -- "${components[@]}" | sha256sum | cut -d ' ' -f 1)
         environment=$(LC_ALL=C pacman -Q | sha256sum | cut -d ' ' -f 1)
         compiler=$({ rustc -vV; gcc --version; clang --version; sccache --version; } | sha256sum | cut -d ' ' -f 1)
-        digest=$(printf '%s\n' "$sources" "$environment" "$(git rev-parse HEAD:.github/workflows/ci.yml)" | sha256sum | cut -d ' ' -f 1)
-        echo "sysext=arch-sysext-v1-${{ runner.arch }}-$digest" >> "$GITHUB_OUTPUT"
-        echo "sccache=arch-sccache-v1-${{ runner.arch }}-$compiler-" >> "$GITHUB_OUTPUT"
-        echo "sources=$sources" >> "$GITHUB_OUTPUT"
-        echo "SCCACHE_DIR=$GITHUB_WORKSPACE/.ci-sccache" >> "$GITHUB_ENV"
-    # Only master records successful builds. PRs can reuse a matching result
-    # for the pinned components and Arch package versions. Scheduled CI still builds.
-    - name: Look up a successful master sysext build
-      id: sysext
+        recipes=$(git rev-parse HEAD:justfile HEAD:scripts/sysext-components.tsv HEAD:.github/workflows/ci.yml)
+        digest=$(printf '%s\n' "$sources" "$environment" "$compiler" "$recipes" | sha256sum | cut -d ' ' -f 1)
+        compiler_key="arch-sccache-v2-${{ runner.arch }}-$BUILD_GROUP-$environment-$compiler-"
+        {
+          echo "components=${components[*]}"
+          echo "installed=arch-sysext-v2-${{ runner.arch }}-$BUILD_GROUP-$digest"
+          echo "compiler-prefix=$compiler_key"
+          echo "compiler-key=$compiler_key$sources"
+        } >> "$GITHUB_OUTPUT"
+        echo "SCCACHE_DIR=$GITHUB_WORKSPACE/build/ci-sccache" >> "$GITHUB_ENV"
+    # Scheduled runs rebuild staging files while still using the compiler cache.
+    - name: Restore installed component files
+      id: installed
       uses: actions/cache/restore@v5
       with:
-        path: ~/.cache/cosmic-ce/sysext/checked
-        key: ${{ steps.inputs.outputs.sysext }}
-        lookup-only: true
-    - name: Prepare the checkout for sysext
-      if: steps.sysext.outputs.cache-hit != 'true' || github.event_name == 'schedule'
+        path: build/sysext-fragments
+        key: ${{ steps.inputs.outputs.installed }}
+        lookup-only: ${{ github.event_name == 'schedule' }}
+    - name: Check out the pinned components and their assets
+      if: steps.installed.outputs.cache-hit != 'true' || github.event_name == 'schedule'
       id: prepare
+      env:
+        COMPONENTS: ${{ steps.inputs.outputs.components }}
       run: |
-        rm -rf /host/usr/local/lib/android # Free space
-        git submodule update --init --recursive --depth 1
-    - name: Check the portal build recipe
-      if: steps.prepare.outcome == 'success'
-      working-directory: xdg-desktop-portal-cosmic
-      run: just --dry-run build-release
-    - name: Fetch Git LFS assets
-      if: steps.prepare.outcome == 'success'
-      run: git submodule foreach 'if [ -f .gitattributes ] && grep -q filter=lfs .gitattributes; then git lfs pull; fi'
-    - name: List Cargo workspaces
-      if: steps.prepare.outcome == 'success'
-      id: cargo
-      run: |
+        read -ra components <<< "$COMPONENTS"
+        GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive --depth 1 --jobs 4 -- "${components[@]}"
         {
           echo 'workspaces<<EOF'
-          git ls-tree --name-only HEAD | while IFS= read -r component; do
+          for component in "${components[@]}"; do
+            if [[ -f "$component/.gitattributes" ]] && grep -q filter=lfs "$component/.gitattributes"; then
+              git -C "$component" lfs pull >&2
+            fi
             if [ -f "$component/Cargo.toml" ]; then
               printf '%s\n' "$component"
             fi
@@ -118,8 +140,8 @@ jobs:
       if: steps.prepare.outcome == 'success'
       uses: Swatinem/rust-cache@v2
       with:
-        shared-key: arch-sysext
-        workspaces: ${{ steps.cargo.outputs.workspaces }}
+        shared-key: arch-sysext-${{ matrix.group }}
+        workspaces: ${{ steps.prepare.outputs.workspaces }}
         cache-targets: false
         cache-bin: false
         save-if: ${{ github.ref == 'refs/heads/master' }}
@@ -128,30 +150,71 @@ jobs:
       id: compiler-cache
       uses: actions/cache/restore@v5
       with:
-        path: .ci-sccache
-        key: ${{ steps.inputs.outputs.sccache }}${{ steps.inputs.outputs.sources }}
-        restore-keys: ${{ steps.inputs.outputs.sccache }}
-    - name: Build the system extension
+        path: build/ci-sccache
+        key: ${{ steps.inputs.outputs.compiler-key }}
+        restore-keys: ${{ steps.inputs.outputs.compiler-prefix }}
+    - name: Build and install each component in staging
       if: steps.prepare.outcome == 'success'
       id: build
-      run: just sysext
+      env:
+        COMPONENTS: ${{ steps.inputs.outputs.components }}
+      run: |
+        read -ra components <<< "$COMPONENTS"
+        mkdir -p build/sysext-fragments
+        stage="$GITHUB_WORKSPACE/cosmic-sysext"
+        for component in "${components[@]}"; do
+          echo "::group::$component"
+          just _build-component "$component"
+          mkdir -p "$stage"
+          just _install-component "$component" "$stage" /usr
+          tar -I 'zstd -T2 -1' -cf "build/sysext-fragments/$component.tar.zst" -C "$stage" .
+          rm -rf -- "$stage" "$component/target"
+          echo "::endgroup::"
+        done
     - name: Show sccache statistics
       if: always() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure')
       run: sccache --show-stats
+    - uses: actions/upload-artifact@v4
+      with:
+        name: sysext-fragments-${{ matrix.group }}
+        path: build/sysext-fragments/*.tar.zst
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 7
+        overwrite: true
     - name: Save the Arch compiler cache
       if: github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.compiler-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
-        path: .ci-sccache
-        key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
-    - name: Record a successful master sysext build
-      if: github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.sysext.outputs.cache-hit != 'true'
-      run: |
-        mkdir -p "$HOME/.cache/cosmic-ce/sysext"
-        touch "$HOME/.cache/cosmic-ce/sysext/checked"
-    - name: Save the master sysext result
-      if: github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.sysext.outputs.cache-hit != 'true'
+        path: build/ci-sccache
+        key: ${{ steps.inputs.outputs.compiler-key }}
+    - name: Save the installed component files
+      if: github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.installed.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
-        path: ~/.cache/cosmic-ce/sysext/checked
-        key: ${{ steps.inputs.outputs.sysext }}
+        path: build/sysext-fragments
+        key: ${{ steps.inputs.outputs.installed }}
+
+  Test:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+    - run: pacman --noconfirm --needed -Syu git just zstd
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - run: git config --global --add safe.directory '*'
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: sysext-fragments-*
+        path: build/sysext-fragments
+        merge-multiple: true
+    - name: Assemble the system extension
+      run: |
+        mkdir -p cosmic-sysext
+        while read -r component group; do
+          tar --zstd -xpf "build/sysext-fragments/$component.tar.zst" -C cosmic-sysext
+        done < scripts/sysext-components.tsv
+        just _sysext-metadata "$GITHUB_WORKSPACE/cosmic-sysext"

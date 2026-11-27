@@ -432,6 +432,8 @@ This will create a system-extension called `cosmic-sysext`, which you can move (
 After starting systemd-sysext.service (`sudo systemctl enable --now systemd-sysext`) and refreshing (`sudo systemd-sysext refresh`) or rebooting,
 COSMIC will be an available option in your favorite display manager.
 
+Arch CI builds groups of components in parallel, caches their installed files and Rust compilation, and assembles the system extension in the same installation order as `just sysext`.
+
 If you have SELinux enabled (e.g. on Fedora), the installed extension won't have the correct labels applied.
 To test COSMIC, you can temporarily disable it and restart `gdm` (note that this will close your running programs).
 
