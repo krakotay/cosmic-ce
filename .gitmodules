@@ -80,7 +80,7 @@
     branch = master
 [submodule "cosmic-files"]
     path = cosmic-files
-    url = https://github.com/pop-os/cosmic-files.git
+	url = https://github.com/krakotay/cosmic-files.git
     branch = master
 [submodule "cosmic-store"]
     path = cosmic-store

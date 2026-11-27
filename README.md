@@ -23,6 +23,8 @@ The [COSMIC CE Viewer fork](https://github.com/krakotay/cosmic-viewer) mirrors `
 
 The [COSMIC CE Applets fork](https://github.com/krakotay/cosmic-applets) mirrors `pop-os/cosmic-applets:master` to its `upstream` branch daily. Its `master` carries the CE changes, including the fixed-width input source indicator. COSMIC CE builds the Applets commit pinned by its submodule.
 
+The [COSMIC CE Files fork](https://github.com/krakotay/cosmic-files) mirrors `pop-os/cosmic-files:master` to its `upstream` branch daily. Its `master` adds readable file types, sorting by type, and optional binary size units (KiB, MiB, GiB). COSMIC CE builds the Files commit pinned by its submodule.
+
 <a name="cosmic-ce-canary-apt-repository"></a>
 
 ## Install COSMIC CE
