@@ -222,8 +222,7 @@ ref="repos/$repository/git/refs/tags/$channel"
 update_tag() {
     local current_sha
     if current_sha=$(gh api "repos/$repository/git/ref/tags/$channel" --jq .object.sha 2>/dev/null); then
-        if [[ "$current_sha" != "$build_sha" ]] &&
-            [[ "$channel" == stable || "$(gh api "repos/$repository/compare/$current_sha...$build_sha" --jq .status)" == ahead ]]; then
+        if [[ "$current_sha" != "$build_sha" ]]; then
             gh api --method PATCH "$ref" -f sha="$build_sha" -F force=true --silent
         fi
     else
@@ -239,7 +238,7 @@ if [[ "$channel" == canary ]]; then
     upload_canary_assets "${package_assets[@]}"
     gh release upload canary "${files[@]}" --repo "$repository" --clobber
     gh release upload canary "$manifest" --repo "$repository" --clobber
-    update_tag
+    # The rolling prerelease uses a fixed tag. Its notes link to the source run.
     gh release edit canary --repo "$repository" --title "$title" \
         "${release_flags[@]}" --notes-file "$work/notes.md"
     # Keep the previous manifest's assets during the transition. Never remove

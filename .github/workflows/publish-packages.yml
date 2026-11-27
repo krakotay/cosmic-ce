@@ -107,6 +107,8 @@ jobs:
           PACKAGE_RUN: ${{ steps.source.outputs.run }}
           PACKAGE_SHA: ${{ steps.source.outputs.sha }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rpm
+          if ! command -v rpm >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends rpm
+          fi
           bash scripts/release-packages.sh packages "$PACKAGE_SHA" "$PACKAGE_RUN" "$GITHUB_REPOSITORY" "$CHANNEL"
