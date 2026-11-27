@@ -1,0 +1,112 @@
+name: Publish COSMIC CE packages
+
+on:
+  workflow_call:
+    inputs:
+      apt:
+        type: boolean
+        default: false
+      channel:
+        type: string
+        default: canary
+    secrets:
+      apt-signing-key:
+        required: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  apt:
+    if: inputs.apt && github.repository == 'krakotay/cosmic-ce' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: cosmic-ce-publish-apt
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check that the build still matches master
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          master=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
+          if [[ "$master" == "$GITHUB_SHA" ]]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping publication for $GITHUB_SHA because master has moved to $master."
+          fi
+      - uses: actions/checkout@v6
+        if: steps.source.outputs.current == 'true'
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        if: steps.source.outputs.current == 'true'
+        with:
+          pattern: deb-*
+          path: packages
+      - name: Create and validate the signed APT archive
+        if: steps.source.outputs.current == 'true'
+        env:
+          APT_SIGNING_KEY: ${{ secrets.apt-signing-key }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apt-utils
+          bash scripts/publish-canary-apt.sh packages canary-site
+      - uses: actions/upload-pages-artifact@v4
+        if: steps.source.outputs.current == 'true'
+        with:
+          name: github-pages-${{ github.run_attempt }}
+          path: canary-site
+      - name: Deploy the Canary APT archive
+        if: steps.source.outputs.current == 'true'
+        id: deploy
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
+
+  release:
+    if: ${{ !inputs.apt && github.repository == 'krakotay/cosmic-ce' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: cosmic-ce-publish-${{ inputs.channel }}
+      cancel-in-progress: false
+    steps:
+      - name: Check that the build still matches master
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          if [[ "$CHANNEL" == stable ]]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          master=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
+          if [[ "$master" == "$GITHUB_SHA" ]]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping publication for $GITHUB_SHA because master has moved to $master."
+          fi
+      - uses: actions/checkout@v6
+        if: steps.source.outputs.current == 'true'
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        if: steps.source.outputs.current == 'true'
+        with:
+          pattern: '{deb,rpm}-*'
+          path: packages
+      - name: Publish packages and installers to the release
+        if: steps.source.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APT_SIGNING_KEY: ${{ secrets.apt-signing-key }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm
+          bash scripts/release-packages.sh packages "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY" "$CHANNEL"

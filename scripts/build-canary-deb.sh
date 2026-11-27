@@ -2,8 +2,8 @@
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
-export DEB_BUILD_OPTIONS='parallel=2 noautodbgsym'
-export CARGO_BUILD_JOBS=2
+export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
+export DEB_BUILD_OPTIONS="parallel=$CARGO_BUILD_JOBS noautodbgsym"
 
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl gpg build-essential dpkg-dev git
@@ -34,7 +34,7 @@ if [[ "$COMPONENT" == cosmic-sound-theme ]]; then
 fi
 
 version=$(dpkg-parsechangelog --show-field Version)
-build_version="${version}+cosmicce0.build${GITHUB_RUN_NUMBER:?}.${GITHUB_RUN_ATTEMPT:?}"
+build_version="${version}+cosmicce0.build${GITHUB_RUN_ID:?}.${GITHUB_RUN_ATTEMPT:?}"
 channel=${CHANNEL:-canary}
 {
     printf '%s (%s) noble; urgency=medium\n\n' "$(dpkg-parsechangelog --show-field Source)" "$build_version"

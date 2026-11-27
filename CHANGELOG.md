@@ -10,3 +10,4 @@ This changelog covers user-facing differences from upstream COSMIC.
 - **Panel** reserves a fixed width for the input source indicator so switching keyboard layouts keeps nearby applets in place.
 - **Viewer** raises the raster texture limit from 2048 to 8192 pixels for sharper viewing of large images.
 - **Packaging** provides Pop!_OS DEBs and Fedora RPMs for individual components or the full desktop, with Canary and Stable channels.
+- **Canary** publishes automatically after checks on `master`. The COSMIC CE APT archive updates once the Arch checks and DEB builds pass, and the GitHub prerelease includes this changelog. Canary uses Thin LTO for components that use Fat LTO in Stable.

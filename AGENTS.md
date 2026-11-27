@@ -1,5 +1,11 @@
 # COSMIC CE
 
+## Project ownership
+
+COSMIC CE is a community fork of System76's COSMIC desktop, maintained independently of the upstream Pop!_OS and COSMIC teams. COSMIC CE maintainers lack write access to the original `pop-os` repositories. Treat those repositories as read-only upstreams and apply CE changes in CE-owned forks.
+
+Publish COSMIC CE packages through CE-owned infrastructure. The signed COSMIC CE Canary APT archive serves packages for Pop!_OS from this fork's GitHub Pages at `https://krakotay.github.io/cosmic-ce/apt`.
+
 ## Component forks
 
 - When connecting a component fork, give it an `upstream` branch and a CE patch branch. Use the original component's default branch name for the CE branch, usually `master` or `main`.

@@ -17,8 +17,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep a release upload in progress when a newer commit starts building.
+  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha || 'latest' }}
+  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/master' }}
 
 defaults:
   run:
@@ -43,6 +44,9 @@ jobs:
     name: Build and stage (${{ matrix.group }})
     needs: plan
     runs-on: ubuntu-latest
+    concurrency:
+      group: ci-arch-${{ github.event_name }}-${{ github.ref }}-${{ matrix.group }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -218,3 +222,41 @@ jobs:
           tar --zstd -xpf "build/sysext-fragments/$component.tar.zst" -C cosmic-sysext
         done < scripts/sysext-components.tsv
         just _sysext-metadata "$GITHUB_WORKSPACE/cosmic-sysext"
+
+  debs:
+    if: github.repository == 'krakotay/cosmic-ce' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+    uses: ./.github/workflows/build-packages.yml
+    concurrency:
+      group: ci-canary-deb
+      cancel-in-progress: true
+    with:
+      format: deb
+
+  rpms:
+    if: github.repository == 'krakotay/cosmic-ce' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+    uses: ./.github/workflows/build-packages.yml
+    concurrency:
+      group: ci-canary-rpm
+      cancel-in-progress: true
+    with:
+      format: rpm
+
+  publish-apt:
+    needs: [Test, debs]
+    uses: ./.github/workflows/publish-packages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    with:
+      apt: true
+    secrets:
+      apt-signing-key: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}
+
+  release:
+    needs: [Test, debs, rpms]
+    uses: ./.github/workflows/publish-packages.yml
+    permissions:
+      contents: write
+    secrets:
+      apt-signing-key: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}

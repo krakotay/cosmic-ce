@@ -4,6 +4,9 @@ set -euo pipefail
 packages=$(realpath "${1:?package artifact directory}")
 site=$(realpath -m "${2:?APT archive output directory}")
 keyring=$(realpath packaging/cosmic-ce-archive.asc)
+run_id=${GITHUB_RUN_ID:?}
+[[ "$run_id" =~ ^[0-9]+$ ]]
+package_build="$run_id[.][1-9][0-9]*"
 export GNUPGHOME
 GNUPGHOME=$(mktemp -d)
 trap 'gpgconf --kill gpg-agent; rm -rf "$GNUPGHOME"' EXIT
@@ -26,7 +29,7 @@ for artifact in "${artifacts[@]}"; do
     name=$(dpkg-deb --field "$artifact" Package)
     version=$(dpkg-deb --field "$artifact" Version)
     architecture=$(dpkg-deb --field "$artifact" Architecture)
-    [[ "$version" == *+cosmicce0.build* && "$architecture" =~ ^(amd64|all)$ ]]
+    [[ "$version" =~ [+]cosmicce0[.]build$package_build$ && "$architecture" =~ ^(amd64|all)$ ]]
     if [[ -v package_names[$name] ]]; then
         printf 'Multiple artifacts provide %s\n' "$name" >&2
         exit 1

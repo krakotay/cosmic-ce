@@ -6,7 +6,7 @@ build_sha=${2:?build commit}
 run_id=${3:?build run ID}
 repository=${4:?GitHub repository}
 channel=${5:?release channel}
-build_number="${GITHUB_RUN_NUMBER:?}.${GITHUB_RUN_ATTEMPT:?}"
+build_number="$run_id.${GITHUB_RUN_ATTEMPT:?}"
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 case "$channel" in
@@ -15,6 +15,8 @@ case "$channel" in
     *) exit 2 ;;
 esac
 [[ "$build_number" =~ ^[0-9]+[.][0-9]+$ ]]
+# Rerunning failed jobs can reuse packages from earlier attempts of this run.
+package_build="$run_id[.][1-9][0-9]*"
 
 work=$(mktemp -d)
 export GNUPGHOME="$work/gnupg"
@@ -57,14 +59,14 @@ for artifact in "${debs[@]}" "${rpms[@]}"; do
             name=$(dpkg-deb --field "$artifact" Package)
             arch=$(dpkg-deb --field "$artifact" Architecture)
             version=$(dpkg-deb --field "$artifact" Version)
-            [[ "$version" == *"+cosmicce0.build$build_number" && "$arch" =~ ^(amd64|all)$ ]]
+            [[ "$version" =~ [+]cosmicce0[.]build$package_build$ && "$arch" =~ ^(amd64|all)$ ]]
             ;;
         *.rpm)
             format=rpm
             platform=fedora45
             metadata=$(rpm -qp --qf '%{NAME} %{ARCH} %{RELEASE}' "$artifact")
             read -r name arch version <<< "$metadata"
-            [[ "$version" == *".cosmicce.$build_number.fc45" && "$arch" =~ ^(x86_64|noarch)$ ]]
+            [[ "$version" =~ [.]cosmicce[.]$package_build[.]fc45$ && "$arch" =~ ^(x86_64|noarch)$ ]]
             ;;
     esac
     [[ "$name" =~ ^[a-z0-9][a-z0-9+.-]+$ && ! -v "names[$platform:$name]" ]]
@@ -110,6 +112,12 @@ Download a single DEB or RPM from Assets, or pass --package cosmic-viewer to ins
 - [Build source](https://github.com/$repository/tree/$build_sha)
 - [Installation and rollback](https://github.com/$repository#install-cosmic-ce)
 NOTES
+if [[ "$channel" == canary ]]; then
+    {
+        printf '\nCanary uses faster Thin LTO in Cargo release profiles that normally use Fat LTO.\n\n'
+        cat "$root/CHANGELOG.md"
+    } >> "$work/notes.md"
+fi
 
 ref="repos/$repository/git/refs/tags/$channel"
 update_tag() {

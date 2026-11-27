@@ -3,7 +3,7 @@ set -euo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 source_dir="$root/${COMPONENT:?}"
-build_number="${GITHUB_RUN_NUMBER:?}.${GITHUB_RUN_ATTEMPT:?}"
+build_number="${GITHUB_RUN_ID:?}.${GITHUB_RUN_ATTEMPT:?}"
 [[ "$build_number" =~ ^[0-9]+[.][0-9]+$ ]]
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
@@ -46,11 +46,16 @@ spec="$work/$name.spec"
 
 fetch_at_commit() {
     local url=$1 commit=$2 path=$3
+    shift 3
+    local -a fetch_args=(--no-tags --depth=1 "$url" "$commit")
+    if (( $# )); then
+        # Fedora dist-git serves branch history but rejects direct fetches of old commits.
+        fetch_args=(--no-tags "$url" "$1")
+    fi
     git init -q "$path"
     for attempt in 1 2 3; do
-        if git -C "$path" fetch \
-            --no-tags --depth=1 "$url" "$commit"; then
-            git -C "$path" checkout --quiet --detach FETCH_HEAD
+        if git -C "$path" fetch "${fetch_args[@]}"; then
+            git -C "$path" checkout --quiet --detach "$commit"
             [[ "$(git -C "$path" rev-parse HEAD)" == "$commit" ]]
             return
         fi
@@ -78,7 +83,7 @@ case "$name" in
         else
             commit=$(awk -v name="$name" '$1 == name {print $2}' "$root/packaging/fedora/dist-git.txt")
             [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
-            fetch_at_commit "https://src.fedoraproject.org/rpms/$name.git" "$commit" "$dist_git"
+            fetch_at_commit "https://src.fedoraproject.org/rpms/$name.git" "$commit" "$dist_git" refs/heads/f45
         fi
         for patch in "$fedora_packaging/patches/$name"/*.patch; do
             [[ ! -f "$patch" ]] || git -C "$dist_git" apply "$patch"

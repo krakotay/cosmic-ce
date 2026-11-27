@@ -67,7 +67,7 @@ You can also download the individual Viewer DEB or RPM under **Assets** and inst
 
 ### Keep selected Canary packages updated on Pop!_OS
 
-Add the signed APT archive with a pin for just the packages you select. In this example, subsequent APT upgrades track CE for `cosmic-viewer` and use your regular sources for the rest of COSMIC.
+Add the signed COSMIC CE Canary APT archive hosted on the fork's GitHub Pages. The installer pins just the packages you select. In this example, subsequent APT upgrades track CE for `cosmic-viewer` and use your regular sources for the rest of COSMIC.
 
 ```sh
 curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/install.sh |
@@ -108,7 +108,9 @@ On Pop!_OS, rollback removes the Canary APT configuration and reinstalls Pop!_OS
 
 In the [COSMIC CE Packages workflow](.github/workflows/canary.yml), enter `cosmic-viewer` in **component** and choose **deb**, **rpm**, or **both**. Download the result from the run's artifacts. The field takes a submodule name. For example, use `cosmic-icons` to build the Fedora package named `cosmic-icon-theme`.
 
-For a public release, run the workflow on `master` with **component** empty and **format** set to **both**, and choose **canary** or **stable**. Complete Canary builds also update the Pop!_OS APT archive. Setting the Actions variable `COSMIC_CE_CANARY_ON_PUSH` to `true` enables complete Canary builds on pushes to `master`.
+Pushes to `master` start the Arch checks and Canary package builds in parallel. The COSMIC CE Canary APT archive updates after the Arch checks and DEB builds pass. The GitHub prerelease also waits for the Fedora RPM transaction check, then publishes the packages and the COSMIC CE changelog.
+
+To publish manually, run the workflow on `master` with **component** empty and **format** set to **both**, and choose **canary** or **stable**. Canary uses Thin LTO for Cargo release profiles that specify Fat LTO. Stable uses the component settings.
 
 Package builds can reuse Rust compiler caches from `master` for the same component and format.
 
