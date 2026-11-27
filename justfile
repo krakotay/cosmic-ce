@@ -29,7 +29,7 @@ build:
     {{ just }} cosmic-term/build-release
     {{ just }} cosmic-viewer/build-release
     {{ make }} -C cosmic-wallpapers all
-    {{ just }} cosmic-workspaces-epoch/build-release
+    cd cosmic-workspaces-epoch && {{ just }} build-release
     {{ just }} pop-launcher/build-release
     cd xdg-desktop-portal-cosmic && {{ just }} build-release
 
@@ -63,7 +63,7 @@ install rootdir="" prefix="/usr/local": build
     {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-term/install
     {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-viewer/install
     {{ make }} -C cosmic-wallpapers install DESTDIR={{rootdir}} prefix={{prefix}}
-    {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-workspaces-epoch/install
+    cd cosmic-workspaces-epoch && {{ just }} rootdir={{rootdir}} prefix={{prefix}} install
     {{ just }} rootdir={{rootdir}} pop-launcher/install
     cd xdg-desktop-portal-cosmic && {{ just }} rootdir={{rootdir}} prefix={{prefix}} install
 
