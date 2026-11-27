@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: Release channel for a complete build
+        description: Release channel
         type: choice
         options: [canary, stable]
         default: canary
@@ -12,38 +12,49 @@ on:
         description: Submodule to build (empty builds the desktop)
         type: string
       format:
-        description: Package format (single-format builds are artifacts only)
+        description: Package format
         type: choice
         options: [both, deb, rpm]
         default: both
+      recover-run:
+        description: Optional CI run ID from a master push to restore packages to the Canary prerelease
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: cosmic-ce-packages-${{ github.ref }}-${{ inputs.channel }}-${{ inputs.component || 'desktop' }}-${{ inputs.format }}
-  cancel-in-progress: false
+  group: cosmic-ce-packages-${{ github.ref }}-${{ inputs.channel }}-${{ inputs.component || 'desktop' }}-${{ inputs.format }}-${{ inputs.recover-run || 'build' }}
+  queue: max
 
 jobs:
   debs:
-    if: github.repository == 'krakotay/cosmic-ce' && inputs.format != 'rpm'
+    if: github.repository == 'krakotay/cosmic-ce' && inputs.recover-run == '' && inputs.format != 'rpm'
     uses: ./.github/workflows/build-packages.yml
+    permissions:
+      contents: write
     with:
       format: deb
       channel: ${{ inputs.channel }}
       component: ${{ inputs.component }}
+      publish-canary: ${{ inputs.channel == 'canary' && github.ref == 'refs/heads/master' }}
 
   rpms:
-    if: github.repository == 'krakotay/cosmic-ce' && inputs.format != 'deb'
+    if: github.repository == 'krakotay/cosmic-ce' && inputs.recover-run == '' && inputs.format != 'deb'
     uses: ./.github/workflows/build-packages.yml
+    permissions:
+      contents: write
     with:
       format: rpm
       channel: ${{ inputs.channel }}
       component: ${{ inputs.component }}
+      publish-canary: ${{ inputs.channel == 'canary' && github.ref == 'refs/heads/master' }}
 
   publish-apt:
     needs: debs
-    if: github.ref == 'refs/heads/master' && inputs.channel == 'canary' && inputs.component == '' && inputs.format == 'both'
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/master' && inputs.channel == 'canary' &&
+      (needs.debs.result == 'success' || needs.debs.result == 'failure')
     uses: ./.github/workflows/publish-packages.yml
     permissions:
       contents: read
@@ -56,11 +67,29 @@ jobs:
 
   release:
     needs: [debs, rpms]
-    if: github.ref == 'refs/heads/master' && inputs.component == '' && inputs.format == 'both'
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/master' && inputs.recover-run == '' &&
+      ((inputs.channel == 'canary' && (needs.debs.result == 'success' || needs.debs.result == 'failure' ||
+      needs.rpms.result == 'success' || needs.rpms.result == 'failure')) ||
+      (inputs.channel == 'stable' && inputs.component == '' && inputs.format == 'both' &&
+      needs.debs.result == 'success' && needs.rpms.result == 'success'))
     uses: ./.github/workflows/publish-packages.yml
     permissions:
       contents: write
     with:
       channel: ${{ inputs.channel }}
+    secrets:
+      apt-signing-key: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}
+
+  recover-release:
+    if: >-
+      github.repository == 'krakotay/cosmic-ce' && github.ref == 'refs/heads/master' &&
+      inputs.channel == 'canary' && inputs.recover-run != ''
+    uses: ./.github/workflows/publish-packages.yml
+    permissions:
+      actions: read
+      contents: write
+    with:
+      package-run: ${{ inputs.recover-run }}
     secrets:
       apt-signing-key: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}

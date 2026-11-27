@@ -12,6 +12,9 @@ on:
       channel:
         type: string
         default: canary
+      publish-canary:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -56,6 +59,8 @@ jobs:
   build:
     needs: sources
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     timeout-minutes: 120
     env:
       COMPONENT: ${{ matrix.component }}
@@ -105,6 +110,7 @@ jobs:
             ${{ steps.container.outputs.source }}
             ${{ steps.container.outputs.prefix }}
       - name: Build ${{ inputs.format }} packages
+        id: package-build
         run: |
           case "$FORMAT" in
             deb) script=build-canary-deb.sh ;;
@@ -126,7 +132,22 @@ jobs:
             -e COMPONENT -e CHANNEL -e CARGO_BUILD_JOBS -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT \
             "${lto[@]}" \
             "$IMAGE" bash "/src/scripts/$script"
+      - name: Publish this component to Canary
+        if: >-
+          inputs.publish-canary && inputs.channel == 'canary' &&
+          github.repository == 'krakotay/cosmic-ce' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$FORMAT" == rpm ]]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends rpm
+          fi
+          mkdir -p packages
+          ln -s "$PWD/canary-${FORMAT}s" "packages/$FORMAT-$COMPONENT"
+          bash scripts/release-packages.sh packages "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY" canary upload
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.package-build.outcome == 'success' }}
         with:
           name: ${{ inputs.format }}-${{ matrix.component }}
           path: canary-${{ inputs.format }}s/*.${{ inputs.format }}

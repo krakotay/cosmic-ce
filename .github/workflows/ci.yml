@@ -226,23 +226,24 @@ jobs:
   debs:
     if: github.repository == 'krakotay/cosmic-ce' && github.event_name == 'push' && github.ref == 'refs/heads/master'
     uses: ./.github/workflows/build-packages.yml
-    concurrency:
-      group: ci-canary-deb
-      cancel-in-progress: true
+    permissions:
+      contents: write
     with:
       format: deb
+      publish-canary: true
 
   rpms:
     if: github.repository == 'krakotay/cosmic-ce' && github.event_name == 'push' && github.ref == 'refs/heads/master'
     uses: ./.github/workflows/build-packages.yml
-    concurrency:
-      group: ci-canary-rpm
-      cancel-in-progress: true
+    permissions:
+      contents: write
     with:
       format: rpm
+      publish-canary: true
 
   publish-apt:
-    needs: [Test, debs]
+    needs: debs
+    if: ${{ !cancelled() && (needs.debs.result == 'success' || needs.debs.result == 'failure') }}
     uses: ./.github/workflows/publish-packages.yml
     permissions:
       contents: read
@@ -254,7 +255,10 @@ jobs:
       apt-signing-key: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}
 
   release:
-    needs: [Test, debs, rpms]
+    needs: [debs, rpms]
+    if: >-
+      !cancelled() && (needs.debs.result == 'success' || needs.debs.result == 'failure' ||
+      needs.rpms.result == 'success' || needs.rpms.result == 'failure')
     uses: ./.github/workflows/publish-packages.yml
     permissions:
       contents: write

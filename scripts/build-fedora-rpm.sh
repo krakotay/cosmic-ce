@@ -110,6 +110,12 @@ case "$name" in
                 -e '/^%license LICENSE$/a %license vendor/libheif-sys/vendor/libheif/COPYING' "$spec"
         elif [[ "$name" == xdg-desktop-portal-cosmic ]]; then
             sed -i 's/^just build-release --bin /just build-release --offline --frozen --bin /' "$spec"
+        elif [[ "$name" == cosmic-workspaces ]]; then
+            sed -i \
+                -e 's/^BuildRequires:[[:space:]]*make$/BuildRequires:  just/' \
+                -e 's/^make$/just build-release --offline --frozen/' \
+                -e 's/^make install DESTDIR=%{buildroot} prefix=%{_prefix}$/just rootdir=%{buildroot} prefix=%{_prefix} install/' \
+                "$spec"
         fi
         ;;
 esac
@@ -154,6 +160,12 @@ if grep -q '^Source1: vendor.tar.gz$' "$spec"; then
     rm -rf -- "$work/$name"
 fi
 
+if [[ "$name" == cosmic-settings && "${CHANNEL:-canary}" == canary ]]; then
+    # Fedora forces full Rust debug info even without a debuginfo subpackage.
+    # Avoid whole-program LTO and full debug info on the hosted runner.
+    export CARGO_PROFILE_RELEASE_LTO=off
+    sed -i '/^just build-release /i export RUSTFLAGS="${RUSTFLAGS/-Cdebuginfo=2/-Cdebuginfo=0}"' "$spec"
+fi
 rpmbuild --define "_topdir $work" --define 'debug_package %{nil}' -bb "$spec"
 if [[ "${RUSTC_WRAPPER:-}" == sccache ]]; then
     sccache --show-stats || true

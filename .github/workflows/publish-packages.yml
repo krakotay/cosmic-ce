@@ -9,6 +9,9 @@ on:
       channel:
         type: string
         default: canary
+      package-run:
+        type: string
+        default: ''
     secrets:
       apt-signing-key:
         required: true
@@ -23,46 +26,39 @@ jobs:
     runs-on: ubuntu-24.04
     concurrency:
       group: cosmic-ce-publish-apt
-      cancel-in-progress: false
+      queue: max
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - name: Check that the build still matches master
-        id: source
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          master=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
-          if [[ "$master" == "$GITHUB_SHA" ]]; then
-            echo 'current=true' >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Skipping publication for $GITHUB_SHA because master has moved to $master."
-          fi
       - uses: actions/checkout@v6
-        if: steps.source.outputs.current == 'true'
         with:
           persist-credentials: false
+      - run: mkdir -p packages
       - uses: actions/download-artifact@v4
-        if: steps.source.outputs.current == 'true'
         with:
           pattern: deb-*
           path: packages
       - name: Create and validate the signed APT archive
-        if: steps.source.outputs.current == 'true'
+        id: archive
         env:
           APT_SIGNING_KEY: ${{ secrets.apt-signing-key }}
         run: |
+          if ! compgen -G 'packages/deb-*/*.deb' >/dev/null; then
+            echo 'No successful DEBs to publish.'
+            exit 0
+          fi
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends apt-utils
           bash scripts/publish-canary-apt.sh packages canary-site
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
       - uses: actions/upload-pages-artifact@v4
-        if: steps.source.outputs.current == 'true'
+        if: steps.archive.outputs.ready == 'true'
         with:
           name: github-pages-${{ github.run_attempt }}
           path: canary-site
       - name: Deploy the Canary APT archive
-        if: steps.source.outputs.current == 'true'
+        if: steps.archive.outputs.ready == 'true'
         id: deploy
         uses: actions/deploy-pages@v4
         with:
@@ -73,40 +69,44 @@ jobs:
     runs-on: ubuntu-24.04
     concurrency:
       group: cosmic-ce-publish-${{ inputs.channel }}
-      cancel-in-progress: false
+      queue: max
     steps:
-      - name: Check that the build still matches master
+      - name: Resolve the package source
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ inputs.channel }}
+          PACKAGE_RUN: ${{ inputs.package-run }}
         run: |
-          if [[ "$CHANNEL" == stable ]]; then
-            echo 'current=true' >> "$GITHUB_OUTPUT"
-            exit 0
+          sha=$GITHUB_SHA
+          run=$GITHUB_RUN_ID
+          if [[ -n "$PACKAGE_RUN" ]]; then
+            [[ "$CHANNEL" == canary && "$PACKAGE_RUN" =~ ^[0-9]+$ ]]
+            run=$PACKAGE_RUN
+            sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" | jq -er \
+              --arg repo "$GITHUB_REPOSITORY" \
+              'select(.event == "push" and .head_branch == "master" and .status == "completed" and
+              .path == ".github/workflows/ci.yml" and .head_repository.full_name == $repo) | .head_sha')
           fi
-          master=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/master" --jq .object.sha)
-          if [[ "$master" == "$GITHUB_SHA" ]]; then
-            echo 'current=true' >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Skipping publication for $GITHUB_SHA because master has moved to $master."
-          fi
+          printf 'sha=%s\nrun=%s\n' "$sha" "$run" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v6
-        if: steps.source.outputs.current == 'true'
         with:
           persist-credentials: false
+      - run: mkdir -p packages
       - uses: actions/download-artifact@v4
-        if: steps.source.outputs.current == 'true'
         with:
           pattern: '{deb,rpm}-*'
           path: packages
+          github-token: ${{ inputs.package-run != '' && github.token || '' }}
+          run-id: ${{ steps.source.outputs.run }}
       - name: Publish packages and installers to the release
-        if: steps.source.outputs.current == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           APT_SIGNING_KEY: ${{ secrets.apt-signing-key }}
           CHANNEL: ${{ inputs.channel }}
+          PACKAGE_RUN: ${{ steps.source.outputs.run }}
+          PACKAGE_SHA: ${{ steps.source.outputs.sha }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends rpm
-          bash scripts/release-packages.sh packages "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY" "$CHANNEL"
+          bash scripts/release-packages.sh packages "$PACKAGE_SHA" "$PACKAGE_RUN" "$GITHUB_REPOSITORY" "$CHANNEL"

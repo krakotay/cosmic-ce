@@ -106,11 +106,13 @@ On Pop!_OS, rollback removes the Canary APT configuration and reinstalls Pop!_OS
 
 ### Build a package or publish a release
 
-In the [COSMIC CE Packages workflow](.github/workflows/canary.yml), enter `cosmic-viewer` in **component** and choose **deb**, **rpm**, or **both**. Download the result from the run's artifacts. The field takes a submodule name. For example, use `cosmic-icons` to build the Fedora package named `cosmic-icon-theme`.
+In the [COSMIC CE Packages workflow](.github/workflows/canary.yml), enter `cosmic-viewer` in **component** and choose **deb**, **rpm**, or **both**. The field takes a submodule name. For example, use `cosmic-icons` to build the Fedora package named `cosmic-icon-theme`. Build artifacts are available on the workflow run.
 
-Pushes to `master` start the Arch checks and Canary package builds in parallel. The COSMIC CE Canary APT archive updates after the Arch checks and DEB builds pass. The GitHub prerelease also waits for the Fedora RPM transaction check, then publishes the packages and the COSMIC CE changelog.
+Each successful Canary component built on `master` is uploaded to the [Canary prerelease](https://github.com/krakotay/cosmic-ce/releases/tag/canary) as soon as its packaging job finishes. This applies to pushes and to manual runs for a single component or format. The signed installer list and archives refresh after the package jobs finish and retain previous successful versions of packages missing from the run. Arch and Fedora transaction checks report their own results in Actions.
 
-To publish manually, run the workflow on `master` with **component** empty and **format** set to **both**, and choose **canary** or **stable**. Canary uses Thin LTO for Cargo release profiles that specify Fat LTO. Stable uses the component settings.
+The [GitHub Pages APT archive](https://krakotay.github.io/cosmic-ce/) is the endpoint used by `apt update` for Pop!_OS. Its signed index refreshes once the DEB jobs finish and carries forward previously published DEBs that were skipped or failed.
+
+To restore packages from a completed Canary CI run on `master`, enter its Actions run ID in **recover-run** while the artifacts are still available. To publish Stable, run on `master` with **component** empty and **format** set to **both**. A Stable release requires a successful complete build.
 
 Package builds can reuse Rust compiler caches from `master` for the same component and format.
 
