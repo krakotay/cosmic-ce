@@ -33,6 +33,9 @@ build:
     {{ just }} pop-launcher/build-release
     cd xdg-desktop-portal-cosmic && {{ just }} build-release
 
+deb-build package:
+    bash scripts/build-local-debs.sh {{quote(package)}}
+
 install rootdir="" prefix="/usr/local": build
     {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-applets/install
     {{ just }} rootdir={{rootdir}} prefix={{prefix}} cosmic-app-library/install

@@ -36,7 +36,7 @@
     branch = master
 [submodule "xdg-desktop-portal-cosmic"]
     path = xdg-desktop-portal-cosmic
-    url = https://github.com/pop-os/xdg-desktop-portal-cosmic.git
+	url = https://github.com/krakotay/xdg-desktop-portal-cosmic.git
     branch = master
 [submodule "cosmic-osd"]
     path = cosmic-osd

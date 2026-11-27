@@ -7,6 +7,7 @@
 I started COSMIC CE because recurring bugs were getting in the way of using COSMIC every day. Some reports of serious desktop problems went months without a public response from maintainers, and upstream closed several proposed fixes after banning LLM-generated content in issues and pull requests. This fork prioritizes fixes that make the desktop better to use and welcomes contributors who use AI tools to develop and test those fixes.
 
 See [Upstream Grievances](./UPSTREAM-GRIEVANCES.md) for the original bug reports, proposed fixes, and upstream responses.
+See the [COSMIC CE changelog](./CHANGELOG.md) for the features and fixes carried by this fork.
 
 ## Contributing
 
@@ -24,6 +25,14 @@ The [COSMIC CE Viewer fork](https://github.com/krakotay/cosmic-viewer) mirrors `
 The [COSMIC CE Applets fork](https://github.com/krakotay/cosmic-applets) mirrors `pop-os/cosmic-applets:master` to its `upstream` branch daily. Its `master` carries the CE changes, including the fixed-width input source indicator. COSMIC CE builds the Applets commit pinned by its submodule.
 
 The [COSMIC CE Files fork](https://github.com/krakotay/cosmic-files) mirrors `pop-os/cosmic-files:master` to its `upstream` branch daily. Its `master` adds readable file types, sorting by type, and optional binary size units (KiB, MiB, GiB). COSMIC CE builds the Files commit pinned by its submodule.
+
+The [COSMIC CE Desktop Portal fork](https://github.com/krakotay/xdg-desktop-portal-cosmic) mirrors `pop-os/xdg-desktop-portal-cosmic:master` to its `upstream` branch daily. Its `master` carries the screenshot window grid. COSMIC CE builds the portal commit pinned by its submodule.
+
+### Build local Debian packages
+
+Run `just deb-build xdg-desktop-portal-cosmic` from the repository root to build the current checkout. The recipe accepts `cosmic-applets`, `cosmic-files`, `cosmic-viewer`, and `xdg-desktop-portal-cosmic`. Use `just deb-build all` to build all four. Packages go into `build/`.
+
+Local builds use `debhelper`, `dpkg-dev`, `just`, a Rust toolchain, and the native development libraries listed in each component's `debian/control`.
 
 <a name="cosmic-ce-canary-apt-repository"></a>
 
@@ -138,7 +147,7 @@ The distribution installation instructions below are for upstream COSMIC package
 * [cosmic-theme-editor](https://github.com/pop-os/cosmic-theme-editor)
 * [cosmic-viewer](https://github.com/pop-os/cosmic-viewer)
 * [cosmic-workspaces-epoch](https://github.com/pop-os/cosmic-workspaces-epoch)
-* [xdg-desktop-portal-cosmic](https://github.com/pop-os/xdg-desktop-portal-cosmic)
+* [xdg-desktop-portal-cosmic](https://github.com/krakotay/xdg-desktop-portal-cosmic)
 * [pop-launcher](https://github.com/pop-os/launcher)
 
 ### COSMIC libraries/crates
