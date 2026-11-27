@@ -45,7 +45,14 @@ channel=${CHANNEL:-canary}
 mv debian/changelog.canary debian/changelog
 
 apt-get build-dep -y --no-install-recommends ./
+if [[ -n "${SCCACHE_DIR:-}" && -f Cargo.lock ]]; then
+    apt-get install -y --no-install-recommends sccache
+    export RUSTC_WRAPPER=sccache CARGO_INCREMENTAL=0
+fi
 dpkg-buildpackage -b -us -uc
+if [[ "${RUSTC_WRAPPER:-}" == sccache ]]; then
+    sccache --show-stats || true
+fi
 
 mkdir -p /src/canary-debs
 for package in ../*.deb; do

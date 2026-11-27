@@ -13,6 +13,9 @@ on:
   schedule:
     - cron: '0 7 * * *' # Midnight MST daily
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,6 +23,10 @@ concurrency:
 jobs:
   Test:
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: '0'
+      RUSTC_WRAPPER: sccache
+      SCCACHE_CACHE_SIZE: 2G
     container:
       image: archlinux:base-devel
       volumes:
@@ -44,6 +51,7 @@ jobs:
         meson
         pipewire
         pulseaudio
+        sccache
         seatd
         wayland
         lld
@@ -52,16 +60,98 @@ jobs:
         freetype2
         flatpak
         nasm
-    - run: rm -rf /host/usr/local/lib/android # Free space
+        zstd
     - uses: actions/checkout@v6
       with:
-        submodules: recursive
+        persist-credentials: false
     # Safe directory behavior seems to have issues with `container:`
     # https://github.com/actions/checkout/issues/915
     - run: git config --global --add safe.directory '*'
+    - name: Fingerprint sysext inputs
+      id: inputs
+      shell: bash
+      run: |
+        sources=$(git ls-tree HEAD | awk '$1 == "160000" || ($4 != ".github" && $4 != "docs" && $4 !~ /[.]md$/)' | sha256sum | cut -d ' ' -f 1)
+        environment=$(LC_ALL=C pacman -Q | sha256sum | cut -d ' ' -f 1)
+        compiler=$({ rustc -vV; gcc --version; clang --version; sccache --version; } | sha256sum | cut -d ' ' -f 1)
+        digest=$(printf '%s\n' "$sources" "$environment" "$(git rev-parse HEAD:.github/workflows/ci.yml)" | sha256sum | cut -d ' ' -f 1)
+        echo "sysext=arch-sysext-v1-${{ runner.arch }}-$digest" >> "$GITHUB_OUTPUT"
+        echo "sccache=arch-sccache-v1-${{ runner.arch }}-$compiler-" >> "$GITHUB_OUTPUT"
+        echo "sources=$sources" >> "$GITHUB_OUTPUT"
+        echo "SCCACHE_DIR=$GITHUB_WORKSPACE/.ci-sccache" >> "$GITHUB_ENV"
+    # Only master records successful builds. PRs can reuse a matching result
+    # for the pinned components and Arch package versions. Scheduled CI still builds.
+    - name: Look up a successful master sysext build
+      id: sysext
+      uses: actions/cache/restore@v5
+      with:
+        path: ~/.cache/cosmic-ce/sysext/checked
+        key: ${{ steps.inputs.outputs.sysext }}
+        lookup-only: true
+    - name: Prepare the checkout for sysext
+      if: steps.sysext.outputs.cache-hit != 'true' || github.event_name == 'schedule'
+      id: prepare
+      run: |
+        rm -rf /host/usr/local/lib/android # Free space
+        git submodule update --init --recursive --depth 1
     - name: Check the portal build recipe
+      if: steps.prepare.outcome == 'success'
       working-directory: xdg-desktop-portal-cosmic
       run: just --dry-run build-release
     - name: Fetch Git LFS assets
+      if: steps.prepare.outcome == 'success'
       run: git submodule foreach 'if [ -f .gitattributes ] && grep -q filter=lfs .gitattributes; then git lfs pull; fi'
-    - run: just sysext
+    - name: List Cargo workspaces
+      if: steps.prepare.outcome == 'success'
+      id: cargo
+      run: |
+        {
+          echo 'workspaces<<EOF'
+          git ls-tree --name-only HEAD | while IFS= read -r component; do
+            if [ -f "$component/Cargo.toml" ]; then
+              printf '%s\n' "$component"
+            fi
+          done
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
+    - name: Cache Cargo dependencies
+      if: steps.prepare.outcome == 'success'
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: arch-sysext
+        workspaces: ${{ steps.cargo.outputs.workspaces }}
+        cache-targets: false
+        cache-bin: false
+        save-if: ${{ github.ref == 'refs/heads/master' }}
+    - name: Restore the Arch compiler cache
+      if: steps.prepare.outcome == 'success'
+      id: compiler-cache
+      uses: actions/cache/restore@v5
+      with:
+        path: .ci-sccache
+        key: ${{ steps.inputs.outputs.sccache }}${{ steps.inputs.outputs.sources }}
+        restore-keys: ${{ steps.inputs.outputs.sccache }}
+    - name: Build the system extension
+      if: steps.prepare.outcome == 'success'
+      id: build
+      run: just sysext
+    - name: Show sccache statistics
+      if: always() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure')
+      run: sccache --show-stats
+    - name: Save the Arch compiler cache
+      if: github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.compiler-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: .ci-sccache
+        key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
+    - name: Record a successful master sysext build
+      if: github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.sysext.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p "$HOME/.cache/cosmic-ce/sysext"
+        touch "$HOME/.cache/cosmic-ce/sysext/checked"
+    - name: Save the master sysext result
+      if: github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.sysext.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ~/.cache/cosmic-ce/sysext/checked
+        key: ${{ steps.inputs.outputs.sysext }}

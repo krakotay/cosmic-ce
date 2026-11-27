@@ -14,12 +14,22 @@ source /etc/os-release
 tools=(git rpm-build tar)
 if [[ -f "$source_dir/Cargo.lock" ]]; then
     tools+=(cargo cargo-rpm-macros cmake gcc-c++ make nasm systemd-rpm-macros)
+    if [[ -n "${SCCACHE_DIR:-}" ]]; then
+        tools+=(sccache)
+        export RUSTC_WRAPPER=sccache CARGO_INCREMENTAL=0
+    fi
 fi
 dnf5 -y --setopt=install_weak_deps=False install "${tools[@]}"
 git config --system http.lowSpeedLimit 1000
 git config --system http.lowSpeedTime 45
 
-work=$(mktemp -d)
+if [[ "${RUSTC_WRAPPER:-}" == sccache && -n "${SCCACHE_DIR:-}" ]]; then
+    # Keep paths to RPM sources and vendored crates stable across CI containers.
+    work=/var/tmp/cosmic-ce-rpm-build
+    mkdir "$work"
+else
+    work=$(mktemp -d)
+fi
 trap 'rm -rf -- "$work"' EXIT
 sources="$work/SOURCES"
 mkdir "$sources"
@@ -140,6 +150,9 @@ if grep -q '^Source1: vendor.tar.gz$' "$spec"; then
 fi
 
 rpmbuild --define "_topdir $work" --define 'debug_package %{nil}' -bb "$spec"
+if [[ "${RUSTC_WRAPPER:-}" == sccache ]]; then
+    sccache --show-stats || true
+fi
 
 mkdir -p "$root/canary-rpms"
 shopt -s nullglob

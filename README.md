@@ -110,6 +110,8 @@ In the [COSMIC CE Packages workflow](.github/workflows/canary.yml), enter `cosmi
 
 For a public release, run the workflow on `master` with **component** empty and **format** set to **both**, and choose **canary** or **stable**. Complete Canary builds also update the Pop!_OS APT archive. Setting the Actions variable `COSMIC_CE_CANARY_ON_PUSH` to `true` enables complete Canary builds on pushes to `master`.
 
+Package builds can reuse Rust compiler caches from `master` for the same component and format.
+
 The [COSMIC sound theme source](https://github.com/pop-os/cosmic-sound-theme/tree/bf5335fe1af0cb3bee83e1ad2371410ee434658d) is by Ian Santopietro and is distributed under CC BY-SA 4.0.
 
 ## About upstream COSMIC
