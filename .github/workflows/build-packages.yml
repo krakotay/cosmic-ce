@@ -15,6 +15,9 @@ on:
       publish-canary:
         type: boolean
         default: false
+    secrets:
+      apt-signing-key:
+        required: false
 
 permissions:
   contents: read
@@ -58,113 +61,20 @@ jobs:
 
   build:
     needs: sources
-    runs-on: ubuntu-24.04
+    uses: ./.github/workflows/build-package.yml
     permissions:
       contents: write
-    timeout-minutes: 120
-    env:
-      COMPONENT: ${{ matrix.component }}
-      FORMAT: ${{ inputs.format }}
-      IMAGE: ${{ inputs.format == 'deb' && 'ubuntu:24.04' || 'quay.io/fedora/fedora:45' }}
-      CHANNEL: ${{ inputs.channel }}
-      CARGO_BUILD_JOBS: '4'
-      SCCACHE_CACHE_SIZE: 128M
     strategy:
       fail-fast: false
       matrix:
         component: ${{ fromJSON(needs.sources.outputs.components) }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - name: Check out the pinned component
-        run: |
-          GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive --depth 1 -- "$COMPONENT"
-          if [[ -f "$COMPONENT/.gitattributes" ]] && grep -q filter=lfs "$COMPONENT/.gitattributes"; then
-            git -C "$COMPONENT" lfs pull
-          fi
-      - name: Prepare the package container and cache key
-        id: container
-        run: |
-          docker pull "$IMAGE"
-          mkdir -p "$RUNNER_TEMP/package-sccache"
-          if [[ ! -f "$COMPONENT/Cargo.lock" ]]; then
-            exit 0
-          fi
-          image_id=$(docker image inspect --format '{{.Id}}' "$IMAGE")
-          source_sha=$(git -C "$COMPONENT" rev-parse HEAD)
-          prefix="packages-sccache-v1-${{ runner.arch }}-$FORMAT-$COMPONENT-"
-          packaging=${{ hashFiles('scripts/build-canary-deb.sh', 'scripts/build-fedora-rpm.sh', 'packaging/fedora/**', 'packaging/cosmic-sound-theme/**', '.github/workflows/build-packages.yml') }}
-          printf 'prefix=%s\nsource=%s\nkey=%s\n' "$prefix" "$prefix$source_sha-" \
-            "$prefix$source_sha-${image_id#sha256:}-$packaging-$CHANNEL" >> "$GITHUB_OUTPUT"
-      # Branch builds can restore master caches. Use the compiler cache with
-      # the current run's package versions and the selected distro's build flags.
-      - name: Restore the package compiler cache
-        if: steps.container.outputs.key != ''
-        id: compiler-cache
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ runner.temp }}/package-sccache
-          key: ${{ steps.container.outputs.key }}
-          restore-keys: |
-            ${{ steps.container.outputs.source }}
-            ${{ steps.container.outputs.prefix }}
-      - name: Build ${{ inputs.format }} packages
-        id: package-build
-        run: |
-          case "$FORMAT" in
-            deb) script=build-canary-deb.sh ;;
-            rpm) script=build-fedora-rpm.sh ;;
-          esac
-          lto=()
-          if [[ "$CHANNEL" == canary && -f "$COMPONENT/Cargo.toml" ]] &&
-              awk '
-                /^[[:space:]]*\[/ { release = ($0 ~ /^[[:space:]]*\[profile[.]release\][[:space:]]*(#.*)?$/) }
-                release && /^[[:space:]]*lto[[:space:]]*=[[:space:]]*("fat"|\047fat\047|true)[[:space:]]*(#.*)?$/ { fat = 1 }
-                END { exit !fat }
-              ' "$COMPONENT/Cargo.toml"; then
-            echo "Using Thin LTO for the Canary release profile."
-            lto=(-e CARGO_PROFILE_RELEASE_LTO=thin)
-          fi
-          docker run --rm -v "$GITHUB_WORKSPACE:/src" \
-            -v "$RUNNER_TEMP/package-sccache:/sccache" \
-            -e SCCACHE_DIR=/sccache -e SCCACHE_CACHE_SIZE \
-            -e COMPONENT -e CHANNEL -e CARGO_BUILD_JOBS -e GITHUB_RUN_ID -e GITHUB_RUN_ATTEMPT \
-            "${lto[@]}" \
-            "$IMAGE" bash "/src/scripts/$script"
-      - name: Publish this component to Canary
-        if: >-
-          inputs.publish-canary && inputs.channel == 'canary' &&
-          github.repository == 'krakotay/cosmic-ce' && github.ref == 'refs/heads/master'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [[ "$FORMAT" == rpm ]] && ! command -v rpm >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends rpm
-          fi
-          mkdir -p packages
-          ln -s "$PWD/canary-${FORMAT}s" "packages/$FORMAT-$COMPONENT"
-          bash scripts/release-packages.sh packages "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_REPOSITORY" canary upload
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() && steps.package-build.outcome == 'success' }}
-        with:
-          name: ${{ inputs.format }}-${{ matrix.component }}
-          path: canary-${{ inputs.format }}s/*.${{ inputs.format }}
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
-          overwrite: true
-      - name: Make the compiler cache readable by the runner
-        if: github.ref == 'refs/heads/master' && steps.container.outputs.key != '' && steps.compiler-cache.outputs.cache-hit != 'true'
-        id: cache-owner
-        run: sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/package-sccache"
-      - name: Save the package compiler cache
-        if: steps.cache-owner.outcome == 'success'
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ runner.temp }}/package-sccache
-          key: ${{ steps.container.outputs.key }}
+    with:
+      component: ${{ matrix.component }}
+      format: ${{ inputs.format }}
+      channel: ${{ inputs.channel }}
+      publish-canary: ${{ inputs.publish-canary }}
+    secrets:
+      apt-signing-key: ${{ secrets.apt-signing-key }}
 
   verify-rpms:
     needs: build

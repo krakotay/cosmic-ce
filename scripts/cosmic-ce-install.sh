@@ -69,7 +69,7 @@ restore_fedora() {
 }
 
 use_release_packages() (
-    local work platform target arch name file hash selected package header
+    local work platform name file selected package attempt fresh
     local -a downloads=()
     local -A files=() hashes=()
     work=$(mktemp -d)
@@ -84,24 +84,33 @@ use_release_packages() (
     local release_url="$release_root/$channel"
     curl -fsSL "$release_url/cosmic-ce-archive.asc" -o "$work/key.asc"
     verify_signing_key "$work/key.asc" "$work/key.gpg"
-    curl -fsSL "$release_url/packages.tsv.asc" -o "$work/packages.tsv.asc"
-    gpgv --keyring "$work/key.gpg" --output "$work/verified.tsv" "$work/packages.tsv.asc"
-    {
-        read -r header
-        [[ "$header" == "COSMIC CE $channel packages v1" ]]
-        while IFS=$'\t' read -r target name arch file hash; do
-            [[ "$target" == "$platform" ]] || continue
-            [[ "$name" =~ ^[a-z0-9][a-z0-9+.-]+$ ]]
-            [[ "$file" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]+[.](deb|rpm)$ && "$file" == *."$format" ]]
-            [[ "$hash" =~ ^[a-f0-9]{64}$ && ! -v "files[$name]" ]]
-            case "$format:$arch" in
-                deb:amd64|deb:all|rpm:x86_64|rpm:noarch) ;;
-                *) exit 1 ;;
-            esac
-            files["$name"]=$file
-            hashes["$name"]=$hash
-        done
-    } < "$work/verified.tsv"
+    read_release_manifest() {
+        local target name arch file hash header
+        fresh="?publication=$(date +%s%N)"
+        curl -fsSL --retry 3 --retry-all-errors --retry-delay 1 \
+            "$release_url/packages.tsv.asc$fresh" -o "$work/packages.tsv.asc" || return
+        rm -f "$work/verified.tsv"
+        gpgv --keyring "$work/key.gpg" --output "$work/verified.tsv" "$work/packages.tsv.asc" || return
+        files=()
+        hashes=()
+        {
+            read -r header
+            [[ "$header" == "COSMIC CE $channel packages v1" ]] || return 1
+            while IFS=$'\t' read -r target name arch file hash; do
+                [[ "$target" == "$platform" ]] || continue
+                [[ "$name" =~ ^[a-z0-9][a-z0-9+.-]+$ &&
+                   "$file" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]+[.](deb|rpm)$ && "$file" == *."$format" &&
+                   "$hash" =~ ^[a-f0-9]{64}$ && ! -v "files[$name]" ]] || return 1
+                case "$format:$arch" in
+                    deb:amd64|deb:all|rpm:x86_64|rpm:noarch) ;;
+                    *) return 1 ;;
+                esac
+                files["$name"]=$file
+                hashes["$name"]=$hash
+            done
+        } < "$work/verified.tsv"
+    }
+    read_release_manifest
     if (( ! ${#files[@]} )); then
         printf 'No packages for %s in this release.\n' "$platform" >&2
         exit 1
@@ -131,14 +140,23 @@ use_release_packages() (
         fi
     done
     for selected in "${packages[@]}"; do
-        file=${files[$selected]}
-        package="$work/$file"
-        curl -fsSL "$release_url/$file" -o "$package"
-        if ! printf '%s  %s\n' "${hashes[$selected]}" "$package" | sha256sum --check --status; then
-            printf 'Checksum mismatch for %s.\n' "$file" >&2
-            exit 1
-        fi
-        downloads+=("$package")
+        for attempt in {1..5}; do
+            file=${files[$selected]}
+            package="$work/$file"
+            if curl -fsSL "$release_url/$file$fresh" -o "$package" &&
+                printf '%s  %s\n' "${hashes[$selected]}" "$package" | sha256sum --check --status; then
+                downloads+=("$package")
+                break
+            fi
+            if [[ "$channel" != canary || "$attempt" == 5 ]]; then
+                printf 'Could not download and verify %s.\n' "$file" >&2
+                exit 1
+            fi
+            # The package and its signed entry can change during a download.
+            sleep 2
+            read_release_manifest
+            [[ -v "files[$selected]" ]]
+        done
     done
     if (( download_only )); then
         install -m 0644 -t . -- "${downloads[@]}"

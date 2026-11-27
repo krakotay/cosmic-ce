@@ -231,6 +231,8 @@ jobs:
     with:
       format: deb
       publish-canary: true
+    secrets:
+      apt-signing-key: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}
 
   rpms:
     if: github.repository == 'krakotay/cosmic-ce' && github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -240,6 +242,8 @@ jobs:
     with:
       format: rpm
       publish-canary: true
+    secrets:
+      apt-signing-key: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}
 
   publish-apt:
     needs: debs

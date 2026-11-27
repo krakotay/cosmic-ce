@@ -110,7 +110,7 @@ On Pop!_OS, rollback removes the Canary APT configuration and reinstalls Pop!_OS
 
 In the [COSMIC CE Packages workflow](.github/workflows/canary.yml), enter `cosmic-viewer` in **component** and choose **deb**, **rpm**, or **both**. The field takes a submodule name. For example, use `cosmic-icons` to build the Fedora package named `cosmic-icon-theme`. Build artifacts are available on the workflow run.
 
-Each successful Canary component built on `master` is uploaded to the [Canary prerelease](https://github.com/krakotay/cosmic-ce/releases/tag/canary) as soon as its packaging job finishes. This applies to pushes and to manual runs for a single component or format. The signed installer list and archives refresh after the package jobs finish and retain previous successful versions of packages missing from the run. Arch and Fedora transaction checks report their own results in Actions.
+Each successful Canary component built on `master` updates its files in the [Canary prerelease](https://github.com/krakotay/cosmic-ce/releases/tag/canary) as soon as its packaging job finishes. Each format has a fixed download name, such as `cosmic-viewer.deb` or `cosmic-viewer.rpm`. The signed installer list updates with each publication, and the complete archives refresh after the package jobs finish. Packages missing from a run retain their last successful versions. Arch and Fedora transaction checks report their own results in Actions.
 
 The [GitHub Pages APT archive](https://krakotay.github.io/cosmic-ce/) is the endpoint used by `apt update` for Pop!_OS. Its signed index refreshes once the DEB jobs finish and carries forward previously published DEBs that were skipped or failed.
 

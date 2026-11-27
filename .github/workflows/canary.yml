@@ -38,6 +38,8 @@ jobs:
       channel: ${{ inputs.channel }}
       component: ${{ inputs.component }}
       publish-canary: ${{ inputs.channel == 'canary' && github.ref == 'refs/heads/master' }}
+    secrets:
+      apt-signing-key: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}
 
   rpms:
     if: github.repository == 'krakotay/cosmic-ce' && inputs.recover-run == '' && inputs.format != 'deb'
@@ -49,6 +51,8 @@ jobs:
       channel: ${{ inputs.channel }}
       component: ${{ inputs.component }}
       publish-canary: ${{ inputs.channel == 'canary' && github.ref == 'refs/heads/master' }}
+    secrets:
+      apt-signing-key: ${{ secrets.COSMIC_CE_APT_SIGNING_KEY }}
 
   publish-apt:
     needs: debs
