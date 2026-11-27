@@ -65,6 +65,8 @@ curl -fsSL https://github.com/krakotay/cosmic-ce/releases/download/canary/instal
 
 You can also download the individual Viewer DEB or RPM under **Assets** and install it with `sudo apt install ./<filename>.deb` or `sudo dnf install ./<filename>.rpm`.
 
+<a name="keep-selected-canary-packages-updated-on-popos"></a>
+
 ### Keep selected Canary packages updated on Pop!_OS
 
 Add the signed COSMIC CE Canary APT archive hosted on the fork's GitHub Pages. The installer pins just the packages you select. In this example, subsequent APT upgrades track CE for `cosmic-viewer` and use your regular sources for the rest of COSMIC.
